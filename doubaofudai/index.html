@@ -1,0 +1,993 @@
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音福袋提醒工具</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script>
+        // 检查QRCode库是否加载成功
+        if (typeof QRCode === 'undefined') {
+            console.error('QRCode library failed to load!');
+        } else {
+            console.log('QRCode library loaded successfully!');
+        }
+    </script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'douyin-blue': '#00f2ea',
+                        'douyin-red': '#fe2c55',
+                        'douyin-dark': '#121212',
+                        'douyin-gray': '#2a2a2a',
+                        'douyin-light': '#f5f5f5'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'shake': 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both'
+                    },
+                    keyframes: {
+                        shake: {
+                            '10%, 90%': { transform: 'translate3d(-1px, 0, 0)' },
+                            '20%, 80%': { transform: 'translate3d(2px, 0, 0)' },
+                            '30%, 50%, 70%': { transform: 'translate3d(-4px, 0, 0)' },
+                            '40%, 60%': { transform: 'translate3d(4px, 0, 0)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .glass-effect {
+                @apply bg-white/10 backdrop-blur-md border border-white/20;
+            }
+            .card-shadow {
+                @apply shadow-lg shadow-douyin-blue/10;
+            }
+            .text-shadow {
+                text-shadow: 0 0 10px rgba(0, 242, 234, 0.5);
+            }
+            .gradient-text {
+                @apply bg-clip-text text-transparent bg-gradient-to-r from-douyin-blue to-douyin-red;
+            }
+            .input-focus {
+                @apply focus:ring-2 focus:ring-douyin-blue/50 focus:border-douyin-blue;
+            }
+        }
+        
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #3a3a3a;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a4a4a;
+        }
+        
+        /* 数字跳动动画 */
+        .countdown-number {
+            transition: all 0.3s ease;
+        }
+        
+        .countdown-number.changed {
+            animation: bounce 0.3s ease;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        /* 提醒动画 */
+        .reminder-active {
+            animation: pulse-fast 1s infinite, shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        
+        /* 隐藏数字输入框的默认箭头 */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-douyin-dark text-douyin-light min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- 头部 -->
+        <header class="text-center mb-8">
+            <div class="flex items-center justify-center mb-2">
+                <h1 class="text-4xl font-bold gradient-text">抖音福袋提醒工具</h1>
+            </div>
+            <p class="text-gray-400">福袋开奖前1分钟自动提醒，再也不错过抽奖机会</p>
+            <!-- 云端同步状态 -->
+            <div class="mt-2 text-xs text-gray-500" id="sync-status">
+                <i class="fa fa-cloud text-douyin-blue"></i> 正在同步云端数据...
+            </div>
+        </header>
+        
+        <!-- 添加福袋表单 -->
+        <div class="glass-effect rounded-xl p-6 mb-8 card-shadow">
+            <h2 class="text-2xl font-bold mb-4 flex items-center">
+                <i class="fa fa-plus-circle text-douyin-blue mr-2"></i>
+                添加福袋
+            </h2>
+            <form id="add-bag-form" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="md:col-span-1">
+                    <label for="bag-name" class="block text-sm font-medium text-gray-400 mb-1">直播间</label>
+                    <input type="text" id="bag-name" name="bag-name" placeholder="例如：抖音官方" class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                </div>
+                <div class="md:col-span-1">
+                    <label for="bag-prize" class="block text-sm font-medium text-gray-400 mb-1">奖品</label>
+                    <input type="text" id="bag-prize" name="bag-prize" placeholder="例如：iPhone 15" class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                </div>
+                <div class="md:col-span-1">
+                    <label for="bag-url" class="block text-sm font-medium text-gray-400 mb-1">直播间链接</label>
+                    <input type="url" id="bag-url" name="bag-url" placeholder="https://..." class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                    <p class="text-xs text-gray-500 mt-1">输入链接后将自动生成二维码</p>
+                </div>
+                <div class="md:col-span-1">
+                    <label for="bag-time" class="block text-sm font-medium text-gray-400 mb-1">开奖时间（分钟）</label>
+                    <div class="relative">
+                        <input type="number" id="bag-time" name="bag-time" value="15" min="0.1" step="0.1" placeholder="输入分钟数，如：1.5" class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                        <div class="absolute inset-y-0 right-0 flex flex-col justify-between px-2 py-1">
+                            <button type="button" class="time-arrow up-arrow text-gray-400 hover:text-douyin-blue transition-colors flex items-center justify-center h-1/2" onclick="adjustTime('up')">
+                                <i class="fa fa-chevron-up"></i>
+                            </button>
+                            <button type="button" class="time-arrow down-arrow text-gray-400 hover:text-douyin-blue transition-colors flex items-center justify-center h-1/2" onclick="adjustTime('down')">
+                                <i class="fa fa-chevron-down"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">可输入小数，如：1.5 表示 1分30秒</p>
+                </div>
+                <div class="md:col-span-1 flex items-end">
+                    <button type="submit" class="w-full bg-gradient-to-r from-douyin-blue to-douyin-red hover:opacity-90 text-white font-bold py-2 px-6 rounded-lg transition-all transform hover:scale-105">
+                        <i class="fa fa-plus mr-2"></i>添加福袋
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- 福袋列表 -->
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold mb-4 flex items-center">
+                <i class="fa fa-list text-douyin-blue mr-2"></i>
+                福袋列表
+                <span id="bag-count" class="ml-2 bg-douyin-gray text-douyin-blue text-sm px-2 py-1 rounded-full">0</span>
+            </h2>
+            
+            <div id="bags-container" class="space-y-4">
+                <!-- 福袋卡片将在这里动态生成 -->
+                <div id="empty-state" class="text-center py-12">
+                    <i class="fa fa-inbox text-5xl text-gray-600 mb-4"></i>
+                    <p class="text-gray-500 text-lg">还没有添加任何福袋</p>
+                    <p class="text-gray-600 mt-2">使用上方表单添加你的第一个福袋吧！</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 底部信息 -->
+        <footer class="text-center text-gray-500 text-sm mt-12">
+            <p>© 2026 抖音福袋提醒工具 | 非官方工具，仅用于辅助提醒</p>
+            <div class="mt-2 flex justify-center space-x-4">
+                <button id="notification-permission" class="text-douyin-blue hover:underline flex items-center">
+                    <i class="fa fa-bell-o mr-1"></i>
+                    开启通知权限
+                </button>
+                <button id="clear-all-bags" class="text-gray-400 hover:text-douyin-red hover:underline flex items-center">
+                    <i class="fa fa-trash-o mr-1"></i>
+                    清空所有福袋
+                </button>
+                <button id="sync-bags" class="text-douyin-blue hover:underline flex items-center">
+                    <i class="fa fa-refresh mr-1"></i>
+                    手动同步数据
+                </button>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- 提醒弹窗 -->
+    <div id="reminder-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+        <div class="bg-douyin-gray rounded-xl p-5 max-w-md w-full mx-4 border-2 border-douyin-red card-shadow">
+            <div class="text-center">
+                <div class="inline-block p-3 bg-douyin-red/20 rounded-full mb-4">
+                    <i class="fa fa-bell text-douyin-red text-4xl"></i>
+                </div>
+                <h3 class="text-2xl font-bold mb-2" id="reminder-title">福袋即将开奖！</h3>
+                <p class="text-gray-300 mb-4" id="reminder-message">还有1分钟就要开奖了，快去参与吧！</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="reminder-close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition-all">
+                        稍后提醒
+                    </button>
+                    <button id="reminder-confirm" class="bg-gradient-to-r from-douyin-blue to-douyin-red hover:opacity-90 text-white font-bold py-2 px-6 rounded-lg transition-all">
+                        立即查看
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 二维码放大弹窗 -->
+    <div id="qrcode-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden">
+        <div class="bg-douyin-gray rounded-xl p-6 max-w-md w-full mx-4 border-2 border-douyin-blue card-shadow">
+            <div class="text-center">
+                <h3 class="text-xl font-bold mb-4">直播间二维码</h3>
+                <p class="text-douyin-blue font-bold mb-2" id="qrcode-bag-name"></p>
+                <div id="qrcode-large" class="qrcode-large-container inline-block mb-4"></div>
+                <p class="text-gray-300 mb-4">
+                    <a id="qrcode-url-text" href="https://v.douyin.com/k8WZ8WsukSU/" target="_blank" class="text-douyin-blue hover:underline"></a>
+                </p>
+                <div class="flex justify-center">
+                    <button id="qrcode-close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition-all">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 修改时间弹窗 -->
+    <div id="edit-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+        <div class="bg-douyin-gray rounded-xl p-6 max-w-md w-full mx-4 border-2 border-douyin-blue card-shadow">
+            <div>
+                <h3 class="text-2xl font-bold mb-4 text-center">修改福袋信息</h3>
+                <p class="text-gray-300 mb-4 text-center" id="edit-bag-name"></p>
+                <div class="mb-4">
+                    <label for="edit-time" class="block text-sm font-medium text-gray-400 mb-2">选择新的开奖时间</label>
+                    <div class="relative">
+                        <input type="number" id="edit-time" value="15" min="0.1" step="0.1" placeholder="输入分钟数，如：1.5" class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                        <div class="absolute inset-y-0 right-0 flex flex-col justify-between px-2 py-1">
+                            <button type="button" class="time-arrow up-arrow text-gray-400 hover:text-douyin-blue transition-colors flex items-center justify-center h-1/2" onclick="adjustTime('up', 'edit-time')">
+                                <i class="fa fa-chevron-up"></i>
+                            </button>
+                            <button type="button" class="time-arrow down-arrow text-gray-400 hover:text-douyin-blue transition-colors flex items-center justify-center h-1/2" onclick="adjustTime('down', 'edit-time')">
+                                <i class="fa fa-chevron-down"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">可输入小数，如：1.5 表示 1分30秒</p>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-url" class="block text-sm font-medium text-gray-400 mb-2">直播间链接</label>
+                    <input type="url" id="edit-url" placeholder="https://..." class="w-full bg-douyin-gray border border-gray-700 rounded-lg px-4 py-2 input-focus transition-all">
+                    <p class="text-xs text-gray-500 mt-1">修改链接后将重新生成二维码</p>
+                </div>
+                <div class="flex justify-center space-x-4">
+                    <button id="edit-close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition-all">
+                        取消
+                    </button>
+                    <button id="edit-confirm" class="bg-gradient-to-r from-douyin-blue to-douyin-red hover:opacity-90 text-white font-bold py-2 px-6 rounded-lg transition-all">
+                        确认修改
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 音效 -->
+    <audio id="reminder-sound" preload="auto" controls style="display: none;">
+        <source src="https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3" type="audio/mpeg">
+    
+    
+    <script>
+        // ===================== 核心云端同步配置（已修复） =====================
+        const API_CONFIG = {
+            API_URL: "/api/bags", // 必须是这个相对路径，不能加域名
+            API_KEY: "qq123456", // 和bags.js里的密钥完全一致
+            DEVICE_ID: localStorage.getItem('cf_device_id') || `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        };
+        // 保存设备ID到本地，同一设备始终用同一个ID
+        localStorage.setItem('cf_device_id', API_CONFIG.DEVICE_ID);
+
+        // 全局变量
+        let bags = [];
+        let countdownIntervals = {};
+        let isNotificationGranted = false;
+        
+        // DOM 元素
+        const addBagForm = document.getElementById('add-bag-form');
+        const bagsContainer = document.getElementById('bags-container');
+        const emptyState = document.getElementById('empty-state');
+        const bagCount = document.getElementById('bag-count');
+        const reminderModal = document.getElementById('reminder-modal');
+        const reminderTitle = document.getElementById('reminder-title');
+        const reminderMessage = document.getElementById('reminder-message');
+        const reminderClose = document.getElementById('reminder-close');
+        const reminderConfirm = document.getElementById('reminder-confirm');
+        const reminderSound = document.getElementById('reminder-sound');
+        const notificationPermissionBtn = document.getElementById('notification-permission');
+        const clearAllBagsBtn = document.getElementById('clear-all-bags');
+        const syncBagsBtn = document.getElementById('sync-bags');
+        const editModal = document.getElementById('edit-modal');
+        const editBagName = document.getElementById('edit-bag-name');
+        const editTime = document.getElementById('edit-time');
+        const editClose = document.getElementById('edit-close');
+        const editConfirm = document.getElementById('edit-confirm');
+        const syncStatus = document.getElementById('sync-status');
+        let currentEditingBagId = null;
+        
+        // 二维码放大弹窗元素
+        const qrcodeModal = document.getElementById('qrcode-modal');
+        const qrcodeLarge = document.getElementById('qrcode-large');
+        const qrcodeBagName = document.getElementById('qrcode-bag-name');
+        const qrcodeUrlText = document.getElementById('qrcode-url-text');
+        const qrcodeClose = document.getElementById('qrcode-close');
+        
+        // ===================== 云端数据核心函数（已修复） =====================
+        // 从云端加载福袋数据
+        async function loadBagsFromCloud() {
+            try {
+                const response = await fetch(`${API_CONFIG.API_URL}?deviceId=${API_CONFIG.DEVICE_ID}`, {
+                    method: "GET",
+                    headers: {
+                        "X-API-Key": API_CONFIG.API_KEY,
+                        "Content-Type": "application/json"
+                    }
+                });
+                const res = await response.json();
+                if (res.success && Array.isArray(res.data)) {
+                    bags = res.data;
+                    renderBags(); // 重新渲染列表
+                    showToast('已从云端同步福袋数据', 'success');
+                    document.getElementById('sync-status').innerHTML = '<i class="fa fa-cloud text-green-500"></i> 云端同步成功';
+                }
+            } catch (err) {
+                console.error('加载云端数据失败：', err);
+                // 降级使用本地存储，防止接口故障
+                bags = JSON.parse(localStorage.getItem('douyinBags')) || [];
+                renderBags();
+                document.getElementById('sync-status').innerHTML = '<i class="fa fa-cloud text-yellow-500"></i> 云端同步失败，使用本地数据';
+            }
+        }
+
+        // 保存福袋数据到云端（同时备份到本地）
+        async function saveBagsToCloud() {
+            // 备份到本地，降级方案
+            localStorage.setItem('douyinBags', JSON.stringify(bags));
+            
+            // 同步到云端
+            try {
+                const response = await fetch(`${API_CONFIG.API_URL}?deviceId=${API_CONFIG.DEVICE_ID}`, {
+                    method: "POST",
+                    headers: {
+                        "X-API-Key": API_CONFIG.API_KEY,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ bags })
+                });
+                const res = await response.json();
+                if (res.success) {
+                    document.getElementById('sync-status').innerHTML = '<i class="fa fa-cloud text-green-500"></i> 数据已同步到云端';
+                }
+            } catch (err) {
+                console.error('保存云端数据失败：', err);
+                document.getElementById('sync-status').innerHTML = '<i class="fa fa-cloud text-yellow-500"></i> 云端同步失败（仅本地保存）';
+            }
+        }
+
+        // Toast提示函数
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgMap = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                warning: 'bg-yellow-500',
+                info: 'bg-blue-500'
+            };
+            toast.className = `fixed bottom-4 right-4 ${bgMap[type]} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-all`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            // 3秒后移除
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+        
+        // ===================== 原有功能函数（保留） =====================
+        // 调整时间的函数
+        function adjustTime(direction, inputId = 'bag-time') {
+            const input = document.getElementById(inputId);
+            let currentValue = parseFloat(input.value) || 0;
+            const step = 0.5; // 默认步长为0.5分钟
+            
+            if (direction === 'up') {
+                currentValue = Math.round((currentValue + step) * 10) / 10;
+            } else if (direction === 'down') {
+                currentValue = Math.max(0.1, Math.round((currentValue - step) * 10) / 10);
+            }
+            
+            input.value = currentValue;
+        }
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 设置默认值为15分钟
+            document.getElementById('bag-time').value = '15';
+            
+            // 检查通知权限
+            checkNotificationPermission();
+            
+            // 优先加载云端数据
+            await loadBagsFromCloud();
+            
+            // 渲染福袋列表
+            renderBags();
+            
+            // 设置自动同步 (5秒一次)
+            setInterval(saveBagsToCloud, 5000);
+            
+            // 为时间输入框添加点击事件
+            document.getElementById('bag-time').addEventListener('click', function() {
+                this.select();
+            });
+            
+            document.getElementById('edit-time').addEventListener('click', function() {
+                this.select();
+            });
+
+            // 表单提交事件
+            addBagForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('bag-name').value.trim();
+                const prize = document.getElementById('bag-prize').value.trim();
+                const timeInput = parseFloat(document.getElementById('bag-time').value);
+                const url = document.getElementById('bag-url').value.trim();
+
+                if (!name) {
+                    showToast('请输入直播间名称', 'error');
+                    return;
+                }
+
+                if (isNaN(timeInput) || timeInput <= 0) {
+                    showToast('请输入有效的开奖时间', 'error');
+                    return;
+                }
+
+                // 计算开奖时间 (当前时间 + 输入分钟数)
+                const endTime = new Date();
+                endTime.setMinutes(endTime.getMinutes() + timeInput);
+
+                // 添加福袋
+                await addBag(name, prize, endTime.toISOString(), url);
+                
+                // 清空表单
+                addBagForm.reset();
+                document.getElementById('bag-time').value = '15';
+            });
+
+            // 手动同步按钮事件
+            syncBagsBtn.addEventListener('click', async () => {
+                await loadBagsFromCloud();
+                await saveBagsToCloud();
+            });
+
+            // 清空所有福袋按钮事件
+            clearAllBagsBtn.addEventListener('click', async () => {
+                await clearAllBags();
+            });
+
+            // 提醒弹窗关闭按钮
+            reminderClose.addEventListener('click', () => {
+                reminderModal.classList.add('hidden');
+            });
+
+            // 提醒弹窗确认按钮
+            reminderConfirm.addEventListener('click', () => {
+                reminderModal.classList.add('hidden');
+                // 可添加跳转逻辑
+            });
+
+            // 二维码弹窗关闭按钮
+            qrcodeClose.addEventListener('click', () => {
+                qrcodeModal.classList.add('hidden');
+            });
+
+            // 编辑弹窗关闭按钮
+            editClose.addEventListener('click', () => {
+                editModal.classList.add('hidden');
+                currentEditingBagId = null;
+            });
+
+            // 编辑弹窗确认按钮
+            editConfirm.addEventListener('click', async () => {
+                await saveEditedBag();
+            });
+        });
+        
+        // 检查通知权限
+        function checkNotificationPermission() {
+            if ('Notification' in window) {
+                if (Notification.permission === 'granted') {
+                    isNotificationGranted = true;
+                    notificationPermissionBtn.innerHTML = '<i class="fa fa-check-circle mr-1"></i>通知已开启';
+                    notificationPermissionBtn.disabled = true;
+                    notificationPermissionBtn.classList.add('text-gray-500');
+                    notificationPermissionBtn.classList.remove('text-douyin-blue', 'hover:underline');
+                } else {
+                    notificationPermissionBtn.addEventListener('click', requestNotificationPermission);
+                }
+            } else {
+                notificationPermissionBtn.innerHTML = '<i class="fa fa-exclamation-circle mr-1"></i>浏览器不支持通知';
+                notificationPermissionBtn.disabled = true;
+                notificationPermissionBtn.classList.add('text-gray-500');
+                notificationPermissionBtn.classList.remove('text-douyin-blue', 'hover:underline');
+            }
+        }
+        
+        // 请求通知权限
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        isNotificationGranted = true;
+                        notificationPermissionBtn.innerHTML = '<i class="fa fa-check-circle mr-1"></i>通知已开启';
+                        notificationPermissionBtn.disabled = true;
+                        notificationPermissionBtn.classList.add('text-gray-500');
+                        notificationPermissionBtn.classList.remove('text-douyin-blue', 'hover:underline');
+                        
+                        // 显示测试通知
+                        new Notification('抖音福袋提醒工具', {
+                            body: '通知权限已开启，福袋即将开奖时会收到提醒！',
+                            icon: 'https://cdn-icons-png.flaticon.com/512/5785/5785135.png'
+                        });
+                    }
+                });
+            }
+        }
+        
+        // 添加福袋
+        async function addBag(name, prize, time, url = '') {
+            // 补全URL协议头
+            if (url && !url.startsWith('http')) {
+                url = 'https://' + url;
+            }
+            
+            const id = Date.now().toString();
+            const bag = {
+                id,
+                name,
+                prize,
+                time,
+                url,
+                createdAt: new Date().toISOString()
+            };
+            
+            bags.push(bag);
+            startCountdown(id, time, name, prize);
+            
+            // 先保存到云端，再更新本地UI和存储
+            renderBags();
+            await saveBagsToCloud();
+            showToast(`福袋 "${name}" 添加成功`, 'success');
+        }
+        
+        // 删除福袋
+        async function deleteBag(id) {
+            const bagIndex = bags.findIndex(bag => bag.id === id);
+            if (bagIndex !== -1) {
+                const bagName = bags[bagIndex].name;
+                
+                // 本地删除
+                bags.splice(bagIndex, 1);
+                if (countdownIntervals[id]) {
+                    clearInterval(countdownIntervals[id]);
+                    delete countdownIntervals[id];
+                }
+                
+                renderBags();
+                await saveBagsToCloud();
+                showToast(`福袋 "${bagName}" 已删除`, 'info');
+            }
+        }
+        
+        // 清空所有福袋
+        async function clearAllBags() {
+            if (bags.length === 0) {
+                showToast('没有福袋可以清空', 'info');
+                return;
+            }
+            
+            if (confirm('确定要清空所有福袋吗？此操作不可恢复。')) {
+                // 清除所有倒计时
+                Object.keys(countdownIntervals).forEach(id => {
+                    clearInterval(countdownIntervals[id]);
+                });
+                countdownIntervals = {};
+                
+                // 本地清空
+                bags = [];
+                renderBags();
+                await saveBagsToCloud();
+                showToast('所有福袋已清空', 'success');
+            }
+        }
+
+        // 保存编辑后的福袋
+        async function saveEditedBag() {
+            if (!currentEditingBagId) return;
+            
+            const bag = bags.find(b => b.id === currentEditingBagId);
+            if (!bag) return;
+            
+            const newTimeInput = parseFloat(editTime.value);
+            const newUrl = document.getElementById('edit-url').value.trim();
+            
+            if (isNaN(newTimeInput) || newTimeInput <= 0) {
+                showToast('请输入有效的开奖时间', 'error');
+                return;
+            }
+
+            // 补全URL协议头
+            const finalUrl = newUrl && !newUrl.startsWith('http') ? `https://${newUrl}` : newUrl;
+            
+            // 计算新的开奖时间
+            const newEndTime = new Date();
+            newEndTime.setMinutes(newEndTime.getMinutes() + newTimeInput);
+            
+            // 更新本地数据
+            bag.time = newEndTime.toISOString();
+            bag.url = finalUrl;
+            
+            // 重启倒计时
+            startCountdown(bag.id, bag.time, bag.name, bag.prize);
+            
+            // 同步到云端
+            editModal.classList.add('hidden');
+            renderBags();
+            await saveBagsToCloud();
+            showToast(`福袋 "${bag.name}" 修改成功`, 'success');
+            currentEditingBagId = null;
+        }
+        
+        // 开始倒计时
+        function startCountdown(id, endTime, name, prize) {
+            // 清除已有的倒计时
+            if (countdownIntervals[id]) {
+                clearInterval(countdownIntervals[id]);
+            }
+            
+            // 创建新的倒计时
+            countdownIntervals[id] = setInterval(() => {
+                const now = new Date().getTime();
+                const end = new Date(endTime).getTime();
+                const distance = end - now;
+                
+                // 如果时间已过，停止倒计时
+                if (distance < 0) {
+                    clearInterval(countdownIntervals[id]);
+                    delete countdownIntervals[id];
+                    
+                    // 更新UI显示已结束
+                    const bagElement = document.getElementById(`bag-${id}`);
+                    if (bagElement) {
+                        const countdownElement = bagElement.querySelector('.countdown');
+                        if (countdownElement) {
+                            countdownElement.innerHTML = '<span class="text-orange-300">已结束</span>';
+                        }
+                    }
+                    return;
+                }
+                
+                // 计算时间
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                
+                // 更新UI
+                const bagElement = document.getElementById(`bag-${id}`);
+                if (bagElement) {
+                    const countdownElement = bagElement.querySelector('.countdown');
+                    if (countdownElement) {
+                        // 格式化时间显示
+                        let timeString = '';
+                        if (days > 0) timeString += `<span class="countdown-number" data-value="${days}">${days}</span>天 `;
+                        if (hours > 0 || days > 0) timeString += `<span class="countdown-number" data-value="${hours}">${hours}</span>时 `;
+                        
+                        // 显示分钟和秒数
+                        timeString += `<span class="countdown-number" data-value="${minutes}">${minutes}</span>分 `;
+                        timeString += `<span class="countdown-number" data-value="${seconds}">${seconds}</span>秒`;
+                        
+                        countdownElement.innerHTML = timeString;
+                        
+                        // 添加数字变化动画
+                        const numbers = countdownElement.querySelectorAll('.countdown-number');
+                        numbers.forEach(num => {
+                            const prevValue = num.getAttribute('data-prev-value');
+                            const currentValue = num.getAttribute('data-value');
+                            
+                            if (prevValue !== null && prevValue !== currentValue) {
+                                num.classList.add('changed');
+                                setTimeout(() => num.classList.remove('changed'), 300);
+                            }
+                            
+                            num.setAttribute('data-prev-value', currentValue);
+                        });
+                    }
+                    
+                    // 检查是否需要提醒（剩余1分钟）
+                    if (distance <= 60000 && distance > 59000) {
+                        showReminder(name, prize);
+                        
+                        // 添加提醒动画效果
+                        bagElement.classList.add('reminder-active');
+                        setTimeout(() => {
+                            bagElement.classList.remove('reminder-active');
+                        }, 3000);
+                    }
+                }
+            }, 1000);
+        }
+        
+        // 显示提醒
+        function showReminder(bagName, prize) {
+            // 播放提醒音效
+            reminderSound.play();
+            
+            // 显示弹窗
+            reminderTitle.textContent = '福袋即将开奖！';
+            reminderMessage.textContent = `"${bagName}" 的福袋（奖品：${prize}）还有1分钟就要开奖了，快去参与吧！`;
+            reminderModal.classList.remove('hidden');
+            
+            // 3秒后自动关闭弹窗
+            setTimeout(() => {
+                reminderModal.classList.add('hidden');
+            }, 3000);
+            
+            // 显示系统通知
+            if (isNotificationGranted) {
+                new Notification('抖音福袋提醒', {
+                    body: `"${bagName}" 的福袋（奖品：${prize}）还有1分钟就要开奖了！`,
+                    icon: 'https://cdn-icons-png.flaticon.com/512/5785/5785135.png'
+                });
+            }
+        }
+        
+        // 渲染福袋列表
+        function renderBags() {
+            // 更新计数
+            bagCount.textContent = bags.length;
+            
+            // 显示/隐藏空状态
+            if (bags.length === 0) {
+                emptyState.classList.remove('hidden');
+                bagsContainer.innerHTML = '';
+                bagsContainer.appendChild(emptyState);
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+            
+            // 清空容器
+            bagsContainer.innerHTML = '';
+            
+            // 按时间排序（最近的在前）
+            const sortedBags = [...bags].sort((a, b) => new Date(a.time) - new Date(b.time));
+            
+            // 渲染每个福袋
+            sortedBags.forEach(bag => {
+                const now = new Date().getTime();
+                const end = new Date(bag.time).getTime();
+                const distance = end - now;
+                
+                // 计算初始时间
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                
+                // 格式化时间显示
+                let timeString = '';
+                if (days > 0) timeString += `<span class="countdown-number" data-value="${days}">${days}</span>天 `;
+                if (hours > 0 || days > 0) timeString += `<span class="countdown-number" data-value="${hours}">${hours}</span>时 `;
+                timeString += `<span class="countdown-number" data-value="${minutes}">${minutes}</span>分 `;
+                timeString += `<span class="countdown-number" data-value="${seconds}">${seconds}</span>秒`;
+                
+                // 创建卡片
+                const bagCard = document.createElement('div');
+                bagCard.id = `bag-${bag.id}`;
+                bagCard.className = 'glass-effect rounded-xl p-3 card-shadow transition-all hover:translate-x-1';
+                
+                // 设置卡片内容
+                bagCard.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="text-base font-bold mb-1 flex items-center">
+                                <i class="fa fa-gift text-douyin-red mr-2 text-sm"></i>
+                                ${escapeHtml(bag.name)}
+                                <span class="countdown text-lg font-bold ml-2 text-purple-400 text-shadow">
+                                    ${distance < 0 ? '<span class="text-orange-300">已结束</span>' : timeString}
+                                </span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mb-1">奖品：${escapeHtml(bag.prize || '未设置')} | 开奖时间：${formatDateTime(bag.time)}</p>
+                            ${bag.url ? `
+                                <div class="mt-2">
+                                    <p class="text-xs text-gray-400 mb-1">直播间二维码：</p>
+                                    <div id="qrcode-${bag.id}" class="qrcode-container inline-block"></div>
+                                    ${bag.url ? `<a href="${bag.url.startsWith('http') ? bag.url : 'https://' + bag.url}" target="_blank" class="text-xs text-douyin-blue hover:underline ml-2 inline-block z-10 relative" style="pointer-events: auto;">打开链接</a>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex space-x-1 ml-4">
+                            <button class="edit-bag bg-gray-700 hover:bg-douyin-blue text-white p-1.5 rounded-full transition-all text-xs" 
+                                    data-id="${bag.id}" title="修改时间">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                            <button class="delete-bag bg-gray-700 hover:bg-douyin-red text-white p-1.5 rounded-full transition-all text-xs" 
+                                    data-id="${bag.id}" title="删除福袋">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // 添加到容器
+                bagsContainer.appendChild(bagCard);
+                
+                // 开始倒计时（未结束的才启动）
+                if (distance >= 0) {
+                    startCountdown(bag.id, bag.time, bag.name, bag.prize);
+                }
+            });
+            
+            // 添加按钮事件监听
+            document.querySelectorAll('.delete-bag').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    await deleteBag(id);
+                });
+            });
+            
+            document.querySelectorAll('.edit-bag').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    openEditModal(id);
+                });
+            });
+            
+            // 生成二维码
+            sortedBags.forEach(bag => {
+                if (bag.url) {
+                    const qrcodeContainer = document.getElementById(`qrcode-${bag.id}`);
+                    if (qrcodeContainer) {
+                        try {
+                            // 清除之前的二维码
+                            qrcodeContainer.innerHTML = '';
+                            
+                            // 使用qrcode-generator库生成二维码
+                            const qr = qrcode(0, 'H'); // 0表示自动检测版本，H表示最高错误修正级别
+                            qr.addData(bag.url);
+                            qr.make();
+                            
+                            // 创建SVG元素
+                            const svg = qr.createSvgTag({
+                                cellSize: 2,
+                                margin: 2,
+                                foreground: '#ffffff',
+                                background: '#121212'
+                            });
+                            
+                            qrcodeContainer.innerHTML = svg;
+                            
+                            // 设置SVG大小
+                            const svgElement = qrcodeContainer.querySelector('svg');
+                            if (svgElement) {
+                                svgElement.style.width = '60px';
+                                svgElement.style.height = '60px';
+                                // 添加点击事件，放大二维码
+                                svgElement.style.cursor = 'pointer';
+                                svgElement.addEventListener('click', () => {
+                                    showLargeQRCode(bag.url, bag.name);
+                                });
+                            }
+                            
+                            console.log(`QR code generated for bag ${bag.id}: ${bag.url}`);
+                        } catch (error) {
+                            console.error(`Failed to generate QR code for bag ${bag.id}:`, error);
+                            qrcodeContainer.innerHTML = '<span class="text-red-500 text-xs">二维码生成失败</span>';
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 打开编辑时间弹窗
+        function openEditModal(bagId) {
+            const bag = bags.find(b => b.id === bagId);
+            if (!bag) return;
+            
+            currentEditingBagId = bagId;
+            editBagName.textContent = `"${bag.name}" 的福袋（奖品：${bag.prize}）`;
+            
+            // 根据剩余时间设置默认值
+            const now = new Date().getTime();
+            const end = new Date(bag.time).getTime();
+            const remainingMinutes = Math.max(0.1, Math.floor((end - now) / (1000 * 60)) || 15);
+            
+            editTime.value = remainingMinutes;
+            document.getElementById('edit-url').value = bag.url || '';
+            
+            // 显示弹窗
+            editModal.classList.remove('hidden');
+        }
+
+        // 显示放大的二维码
+        function showLargeQRCode(url, name) {
+            qrcodeBagName.textContent = name;
+            qrcodeUrlText.href = url.startsWith('http') ? url : `https://${url}`;
+            qrcodeUrlText.textContent = url;
+            
+            // 生成大二维码
+            qrcodeLarge.innerHTML = '';
+            try {
+                const qr = qrcode(0, 'H');
+                qr.addData(url);
+                qr.make();
+                const svg = qr.createSvgTag({
+                    cellSize: 4,
+                    margin: 2,
+                    foreground: '#ffffff',
+                    background: '#121212'
+                });
+                qrcodeLarge.innerHTML = svg;
+                const svgElement = qrcodeLarge.querySelector('svg');
+                if (svgElement) {
+                    svgElement.style.width = '200px';
+                    svgElement.style.height = '200px';
+                }
+            } catch (error) {
+                qrcodeLarge.innerHTML = '<span class="text-red-500">二维码生成失败</span>';
+            }
+            
+            qrcodeModal.classList.remove('hidden');
+        }
+        
+        // 工具函数：格式化日期时间
+        function formatDateTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+        
+        // 工具函数：转义HTML字符
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</html>
